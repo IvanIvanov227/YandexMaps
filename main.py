@@ -3,7 +3,7 @@ import pygame
 import requests
 
 
-# kurwa
+# kurwa bober
 
 def error(res):
     print("Ошибка выполнения запроса:")
@@ -23,12 +23,12 @@ def load_data():
         return cords, scale
 
 
-def load_image(coords, scale):
+def load_image(coords, scale, typ: str):
     static_api_server = 'https://static-maps.yandex.ru/1.x/'
     params_static = {
         'll': ','.join(map(str, coords)),
         'spn': ','.join(map(str, scale)),
-        'l': 'map'
+        'l': typ
     }
     response = requests.get(static_api_server, params=params_static)
     print('REQUEST')
@@ -55,8 +55,8 @@ def check_scale(scale):
 
 def main():
     coords, scale = load_data()
-    load_image(coords, scale)
-    
+    typ = 'map'
+    load_image(coords, scale, typ)
 
     pygame.init()
     screen = pygame.display.set_mode((600, 450))
@@ -86,12 +86,14 @@ def main():
                     coords = [coords[0] - jump_scare, coords[1]]
                 elif keys[pygame.K_RIGHT]:
                     coords = [coords[0] + jump_scare, coords[1]]
+                elif keys[pygame.K_s]:
+                    if typ == 'map':
+                        typ = 'sat'
+                    else:
+                        typ = 'map'
 
-                load_image(coords, scale)
+                load_image(coords, scale, typ)
                 map_im = pygame.image.load('map.png')
-
-
-
 
         screen.blit(map_im, (0, 0))
         pygame.display.flip()
