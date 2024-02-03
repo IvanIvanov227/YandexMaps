@@ -1,104 +1,70 @@
-import sys
-import pygame
+from PyQt6.QtWidgets import QMainWindow, QApplication
+from PyQt6.QtGui import QPixmap, QShortcut, QKeySequence
+from PyQt6.QtCore import Qt
+from PyQt6 import uic
 import requests
+import sys
+
+# Bober kurwa
+# Чтобы запустить QtDesigner напишите в коносли "PyQt6-tools designer"
 
 
-# kurwa bober
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        uic.loadUi('GUI.ui', self)
+        self.map = QPixmap()
+        self.zoom = 12
+        self.connect_buttons()
+        self.update_map()
 
-def error(res):
-    print("Ошибка выполнения запроса:")
-    print("Http статус:", res.status_code, "(", res.reason, ")")
-    sys.exit(1)
+    def check_zoom(self):
+        if self.zoom > 21:
+            self.zoom = 21
+        elif self.zoom < 2:
+            self.zoom = 2  # если поставить меньше, то у карты масштаб поменяется
 
+    def connect_buttons(self):
+        # тут кнопочки соеденяем
+        # Пайчарм на отсуствие коннекта ругается, но он лох слепой просто
+        zoom_in = QShortcut(QKeySequence(Qt.Key.Key_PageUp), self)
+        zoom_in.activated.connect(self.zoomin_map)
 
-def load_data():
-    try:
-        # coords = list(map(float, input('Введите координаты: ').split()))
-        # scale = list(map(float, input('Введите мастштаб: ').split()))
-        cords = 60, 57
-        scale = 1, 1
-    except ValueError:
-        print('Вводите нормальные данные')
-    else:
-        return cords, scale
+        zoom_out = QShortcut(QKeySequence(Qt.Key.Key_PageDown), self)
+        zoom_out.activated.connect(self.zoomout_map)
 
+    def update_map(self):
+        self.map.loadFromData(self.load_map([60, 57], self.zoom, 'map'))
+        # не смотрим, что PyCharm ругается, ибо пайчарм - тот ещё дурачок, мы эту кнопку в uic.loadui в __init__ делали
+        self.map_label.setPixmap(self.map)
 
-def load_image(coords, scale, typ: str):
-    static_api_server = 'https://static-maps.yandex.ru/1.x/'
-    params_static = {
-        'll': ','.join(map(str, coords)),
-        'spn': ','.join(map(str, scale)),
-        'l': typ
-    }
-    response = requests.get(static_api_server, params=params_static)
-    print('REQUEST')
+    def zoomin_map(self):
+        self.zoom += 1
+        self.check_zoom()
+        self.update_map()
 
-    if not response:
-        error(response)
-    with open('map.png', 'wb') as file:
-        file.write(response.content)
+    def zoomout_map(self):
+        self.zoom -= 1
+        self.check_zoom()
+        self.update_map()
 
-
-def check_scale(scale):
-    scale_1, scale_2 = scale
-    new_scale = scale
-    if scale_1 <= 0:
-        new_scale[0] = 0.05
-    if scale_2 <= 0:
-        new_scale[1] = 0.05
-    if scale_1 >= 90:
-        new_scale[0] = 89
-    if scale_2 >= 90:
-        new_scale[1] = 89
-    return new_scale
-
-
-def main():
-    coords, scale = load_data()
-    typ = 'map'
-    load_image(coords, scale, typ)
-
-    pygame.init()
-    screen = pygame.display.set_mode((600, 450))
-    running = True
-    map_im = pygame.image.load('map.png')
-
-    scale_step = 0.4
-    jump_scare = 0.05
-
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                keys = pygame.key.get_pressed()
-                if keys[pygame.K_PAGEUP]:
-                    scale = check_scale([scale[0] + scale_step, scale[1] + scale_step])
-
-                elif keys[pygame.K_PAGEDOWN]:
-                    scale = check_scale([scale[0] - scale_step, scale[1] - scale_step])
-
-                elif keys[pygame.K_UP]:
-                    coords = [coords[0], coords[1] + jump_scare]
-                elif keys[pygame.K_DOWN]:
-                    coords = [coords[0], coords[1] - jump_scare]
-                elif keys[pygame.K_LEFT]:
-                    coords = [coords[0] - jump_scare, coords[1]]
-                elif keys[pygame.K_RIGHT]:
-                    coords = [coords[0] + jump_scare, coords[1]]
-                elif keys[pygame.K_s]:
-                    if typ == 'map':
-                        typ = 'sat'
-                    else:
-                        typ = 'map'
-
-                load_image(coords, scale, typ)
-                map_im = pygame.image.load('map.png')
-
-        screen.blit(map_im, (0, 0))
-        pygame.display.flip()
-    pygame.quit()
+    @staticmethod
+    def load_map(cords: list[float | int, float | int], zoom: int, typ: str):
+        server_url = 'https://static-maps.yandex.ru/1.x/'
+        parameters = {'ll': ','.join(map(str, cords)),
+                      'z': zoom,
+                      'l': typ,
+                      'apikey': '5e802ae4-1674-4833-bdac-044ca0b297af'}
+        response = requests.get(server_url, params=parameters)
+        if not response:
+            print('Чёт пошло не так')
+            print(f'ответ от сервера: {response}')
+            sys.exit(404)
+        return response.content
 
 
 if __name__ == '__main__':
-    main()
+    app = QApplication([])
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())

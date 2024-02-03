@@ -1,0 +1,3 @@
+requests
+PyQt6
+PyQt6-tools
