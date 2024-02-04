@@ -6,7 +6,7 @@ import requests
 import sys
 
 # Bober kurwa
-# Чтобы запустить QtDesigner напишите в коносли "PyQt6-tools designer"
+# Чтобы запустить QtDesigner напишите в консоли "PyQt6-tools designer"
 
 
 class MainWindow(QMainWindow):
@@ -16,20 +16,30 @@ class MainWindow(QMainWindow):
         self.map = QPixmap()
         self.zoom = 17
         self.cords = [60.583335, 56.964456]
+        self.values_speed = {2: 10, 3: 5, 4: 2, 5: 1, 6: 0.8, 7: 0.6, 8: 0.3, 9: 0.1, 10: 0.08,
+                             11: 0.04, 12: 0.02, 13: 0.01, 14: 0.005, 15: 0.003, 16: 0.0015, 17: 0.0006,
+                             18: 0.0003, 19: 0.0002, 20: 0.00015, 21: 0.0001}
 
-        self.move_speed = 0.001
+        self.move_speed = self.values_speed[self.zoom]
         self.connect_buttons()
         self.update_map()
 
-    def check_zoom(self):
-        if self.zoom > 21:
-            self.zoom = 21
-        elif self.zoom < 2:
-            self.zoom = 2  # если поставить меньше, то у карты масштаб поменяется
+    @staticmethod
+    def check_zoom(zoom: int):
+        # если поставить меньше, то у карты масштаб поменяется
+        if zoom > 21 or zoom < 2:
+            return False
+        return True
+
+    @staticmethod
+    def check_cords(cords: list[float | int, float | int]):
+        if cords[1] > 90 or cords[1] < -90 or cords[0] > 180 or cords[0] < -180:
+            return False
+        return True
 
     def connect_buttons(self):
-        # тут кнопочки соеденяем
-        # Пайчарм на отсуствие коннекта ругается, но он лох слепой просто
+        # тут кнопочки соединяем
+        # Пайчарм на отсутствие коннекта ругается, но он лох слепой просто
         zoom_in = QShortcut(QKeySequence(Qt.Key.Key_PageUp), self)
         zoom_in.activated.connect(self.zoomout_map)
 
@@ -37,58 +47,50 @@ class MainWindow(QMainWindow):
         zoom_out.activated.connect(self.zoomin_map)
 
         move_left = QShortcut(QKeySequence(Qt.Key.Key_Left), self)
-        move_left.activated.connect(self.move_left)
+        move_left.activated.connect(lambda: self.move([self.cords[0] - self.move_speed, self.cords[1]]))
 
         move_right = QShortcut(QKeySequence(Qt.Key.Key_Right), self)
-        move_right.activated.connect(self.move_right)
+        move_right.activated.connect(lambda: self.move([self.cords[0] + self.move_speed, self.cords[1]]))
 
         move_up = QShortcut(QKeySequence(Qt.Key.Key_Up), self)
-        move_up.activated.connect(self.move_up)
+        move_up.activated.connect(lambda: self.move([self.cords[0], self.cords[1] + self.move_speed]))
 
         move_down = QShortcut(QKeySequence(Qt.Key.Key_Down), self)
-        move_down.activated.connect(self.move_down)
+        move_down.activated.connect(lambda: self.move([self.cords[0], self.cords[1] - self.move_speed]))
 
     def update_map(self):
-        self.map.loadFromData(self.load_map(self.cords, self.zoom, 'map'))
+        image = self.load_map(self.cords, self.zoom, 'map')
+        if image is not None:
+            self.map.loadFromData(image)
         # не смотрим, что PyCharm ругается, ибо пайчарм - тот ещё дурачок, мы эту кнопку в uic.loadui в __init__ делали
         self.map_label.setPixmap(self.map)
 
     def zoomin_map(self):
-        self.zoom += 1
-        self.check_zoom()
+        if self.check_zoom(self.zoom - 1):
+            self.zoom -= 1
+            self.move_speed = self.values_speed[self.zoom]
         self.update_map()
 
     def zoomout_map(self):
-        self.zoom -= 1
-        self.check_zoom()
+        if self.check_zoom(self.zoom + 1):
+            self.zoom += 1
+            self.move_speed = self.values_speed[self.zoom]
         self.update_map()
 
-    def move_left(self):
-        self.cords = [self.cords[0] - self.move_speed, self.cords[1]]
-        self.update_map()
-
-    def move_right(self):
-        self.cords = [self.cords[0] + self.move_speed, self.cords[1]]
-        self.update_map()
-
-    def move_up(self):
-        self.cords = [self.cords[0], self.cords[1] + self.move_speed]
-        self.update_map()
-
-    def move_down(self):
-        self.cords = [self.cords[0], self.cords[1] - self.move_speed]
-        self.update_map()
+    def move(self, cords):
+        if self.check_cords(cords):
+            self.cords = cords
+            self.update_map()
 
     @staticmethod
     def load_map(cords: list[float | int, float | int], zoom: int, typ: str):
         server_url = 'https://static-maps.yandex.ru/1.x/'
         parameters = {'ll': ','.join(map(str, cords)),
                       'z': zoom,
-                      'l': typ,
-                      'apikey': '5e802ae4-1674-4833-bdac-044ca0b297af'}
+                      'l': typ}
         response = requests.get(server_url, params=parameters)
         if not response:
             print('Чёт пошло не так')
-            print(f'ответ от сервера: {response}')
-            sys.exit(404)
+            print(f'ответ от сервера: {response}, код ответа: {response.status_code}')
+            return None
         return response.content
