@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import QMainWindow
 from PyQt6.QtCore import Qt
 from PyQt6 import uic
 import requests
-import sys
+import json
 
 # Bober kurwa
 # Чтобы запустить QtDesigner напишите в консоли "PyQt6-tools designer"
@@ -13,7 +13,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         uic.loadUi('GUI.ui', self)
+        self.keys = self.set_apikey()
         self.map = QPixmap()
+        # Метки
+        self.mark = ''
         self.zoom = 17
         self.typ = 'map'
         self.cords = [60.583335, 56.964456]
@@ -26,6 +29,11 @@ class MainWindow(QMainWindow):
         self.map_view.currentTextChanged.connect(self.view_changed)
         self.connect_buttons()
         self.update_map()
+
+    @staticmethod
+    def set_apikey():
+        with open('keys.json') as file:
+            return json.load(file)
 
     def view_changed(self, view):
         self.typ = view
@@ -65,8 +73,34 @@ class MainWindow(QMainWindow):
         move_down = QShortcut(QKeySequence(Qt.Key.Key_Down), self)
         move_down.activated.connect(lambda: self.move([self.cords[0], self.cords[1] - self.move_speed]))
 
+        self.find_toponym_button.clicked.connect(self.find_toponym)
+
+    def find_toponym(self):
+        geocode_api_server = 'https://geocode-maps.yandex.ru/1.x/'
+        geocode_params = {
+            'apikey': self.keys['geocode'],
+            'geocode': self.name_toponym.text(),
+            'lang': 'ru_RU',
+            'format': 'json'
+        }
+
+        response = requests.get(geocode_api_server, params=geocode_params)
+        if not response:
+            self.error_message.setText('Не удалось найти объект!')
+        else:
+            self.error_message.clear()
+            json_response = response.json()
+            toponym = json_response["response"]["GeoObjectCollection"][
+                "featureMember"][0]["GeoObject"]
+            toponym_cord = toponym["Point"]["pos"].split()
+
+            pt = "{0},{1},{2}{3}{4}".format(toponym_cord[0], toponym_cord[1], 'pm2', 'gn', 'l')
+            self.mark = pt
+            self.cords = list(map(float, toponym_cord))
+            self.update_map()
+
     def update_map(self):
-        image = self.load_map(self.cords, self.zoom, self.typ)
+        image = self.load_map(self.cords, self.zoom, self.typ, self.mark)
         if image is not None:
             self.map.loadFromData(image)
         # не смотрим, что PyCharm ругается, ибо пайчарм - тот ещё дурачок, мы эту кнопку в uic.loadui в __init__ делали
@@ -90,11 +124,13 @@ class MainWindow(QMainWindow):
             self.update_map()
 
     @staticmethod
-    def load_map(cords: list[float | int, float | int], zoom: int, typ: str):
+    def load_map(cords: list[float | int, float | int], zoom: int, typ: str, pt: str):
         server_url = 'https://static-maps.yandex.ru/1.x/'
         parameters = {'ll': ','.join(map(str, cords)),
                       'z': zoom,
                       'l': typ}
+        if pt != '':
+            parameters['pt'] = pt
         response = requests.get(server_url, params=parameters)
         if not response:
             print('Чёт пошло не так')
