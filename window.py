@@ -15,13 +15,20 @@ class MainWindow(QMainWindow):
         uic.loadUi('GUI.ui', self)
         self.map = QPixmap()
         self.zoom = 17
+        self.typ = 'map'
         self.cords = [60.583335, 56.964456]
         self.values_speed = {2: 10, 3: 5, 4: 2, 5: 1, 6: 0.8, 7: 0.6, 8: 0.3, 9: 0.1, 10: 0.08,
                              11: 0.04, 12: 0.02, 13: 0.01, 14: 0.005, 15: 0.003, 16: 0.0015, 17: 0.0006,
                              18: 0.0003, 19: 0.0002, 20: 0.00015, 21: 0.0001}
 
         self.move_speed = self.values_speed[self.zoom]
+        self.map_view.addItems(['map', 'sat', 'skl'])
+        self.map_view.currentTextChanged.connect(self.view_changed)
         self.connect_buttons()
+        self.update_map()
+
+    def view_changed(self, view):
+        self.typ = view
         self.update_map()
 
     @staticmethod
@@ -59,7 +66,7 @@ class MainWindow(QMainWindow):
         move_down.activated.connect(lambda: self.move([self.cords[0], self.cords[1] - self.move_speed]))
 
     def update_map(self):
-        image = self.load_map(self.cords, self.zoom, 'map')
+        image = self.load_map(self.cords, self.zoom, self.typ)
         if image is not None:
             self.map.loadFromData(image)
         # не смотрим, что PyCharm ругается, ибо пайчарм - тот ещё дурачок, мы эту кнопку в uic.loadui в __init__ делали
