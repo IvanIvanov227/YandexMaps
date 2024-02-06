@@ -74,6 +74,11 @@ class MainWindow(QMainWindow):
         move_down.activated.connect(lambda: self.move([self.cords[0], self.cords[1] - self.move_speed]))
 
         self.find_toponym_button.clicked.connect(self.find_toponym)
+        self.reset_search.clicked.connect(self.delete_marks)
+
+    def delete_marks(self):
+        self.mark = ''
+        self.update_map()
 
     def find_toponym(self):
         geocode_api_server = 'https://geocode-maps.yandex.ru/1.x/'
@@ -90,8 +95,12 @@ class MainWindow(QMainWindow):
         else:
             self.error_message.clear()
             json_response = response.json()
-            toponym = json_response["response"]["GeoObjectCollection"][
-                "featureMember"][0]["GeoObject"]
+            try:
+                toponym = json_response["response"]["GeoObjectCollection"][
+                    "featureMember"][0]["GeoObject"]
+            except IndexError:
+                self.error_message.setText('Не удалось найти объект!')
+                return
             toponym_cord = toponym["Point"]["pos"].split()
 
             pt = "{0},{1},{2}{3}{4}".format(toponym_cord[0], toponym_cord[1], 'pm2', 'gn', 'l')
