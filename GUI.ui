@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>MainWindow</string>
+   <string>ТипаЯндексКарты</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <widget class="QLabel" name="map_label">
@@ -78,15 +78,15 @@
    <widget class="QLabel" name="error_message">
     <property name="geometry">
      <rect>
-      <x>200</x>
-      <y>510</y>
-      <width>161</width>
+      <x>240</x>
+      <y>520</y>
+      <width>211</width>
       <height>31</height>
      </rect>
     </property>
     <property name="font">
      <font>
-      <pointsize>8</pointsize>
+      <pointsize>12</pointsize>
       <weight>75</weight>
       <bold>true</bold>
      </font>
@@ -142,7 +142,7 @@
     <property name="geometry">
      <rect>
       <x>240</x>
-      <y>480</y>
+      <y>460</y>
       <width>211</width>
       <height>51</height>
      </rect>
@@ -154,6 +154,39 @@
     </property>
     <property name="text">
      <string>Сброс поискового результата</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_3">
+    <property name="geometry">
+     <rect>
+      <x>470</x>
+      <y>450</y>
+      <width>141</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>12</pointsize>
+      <weight>50</weight>
+      <bold>false</bold>
+     </font>
+    </property>
+    <property name="text">
+     <string>Адрес объекта</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
+   </widget>
+   <widget class="QPlainTextEdit" name="address_toponym">
+    <property name="geometry">
+     <rect>
+      <x>480</x>
+      <y>490</y>
+      <width>331</width>
+      <height>71</height>
+     </rect>
     </property>
    </widget>
   </widget>

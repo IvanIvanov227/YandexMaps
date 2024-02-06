@@ -74,10 +74,16 @@ class MainWindow(QMainWindow):
         move_down.activated.connect(lambda: self.move([self.cords[0], self.cords[1] - self.move_speed]))
 
         self.find_toponym_button.clicked.connect(self.find_toponym)
-        self.reset_search.clicked.connect(self.delete_marks)
+        self.reset_search.clicked.connect(self.delete_search)
 
-    def delete_marks(self):
+    def not_find_object_message(self):
+        self.error_message.setText('Не удалось найти объект!')
+        self.address_toponym.clear()
+
+    def delete_search(self):
         self.mark = ''
+        self.error_message.clear()
+        self.address_toponym.clear()
         self.update_map()
 
     def find_toponym(self):
@@ -91,7 +97,7 @@ class MainWindow(QMainWindow):
 
         response = requests.get(geocode_api_server, params=geocode_params)
         if not response:
-            self.error_message.setText('Не удалось найти объект!')
+            self.not_find_object_message()
         else:
             self.error_message.clear()
             json_response = response.json()
@@ -99,10 +105,11 @@ class MainWindow(QMainWindow):
                 toponym = json_response["response"]["GeoObjectCollection"][
                     "featureMember"][0]["GeoObject"]
             except IndexError:
-                self.error_message.setText('Не удалось найти объект!')
+                self.not_find_object_message()
                 return
             toponym_cord = toponym["Point"]["pos"].split()
-
+            toponym_address = toponym['metaDataProperty']['GeocoderMetaData']['Address']['formatted']
+            self.address_toponym.setPlainText(toponym_address)
             pt = "{0},{1},{2}{3}{4}".format(toponym_cord[0], toponym_cord[1], 'pm2', 'gn', 'l')
             self.mark = pt
             self.cords = list(map(float, toponym_cord))
