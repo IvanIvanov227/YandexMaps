@@ -14,6 +14,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         uic.loadUi('GUI.ui', self)
         self.keys = self.set_apikey()
+        self.size_image = 600, 450
         self.map = QPixmap()
         # Метки
         self.mark = ''
@@ -21,17 +22,12 @@ class MainWindow(QMainWindow):
         self.add_mail = False
         # Последний географический объект, который был найден
         self.toponym = None
-        self.zoom = 17
+        self.bbox = [[60.579364, 56.962154], [60.587575, 56.966639]]
         # Вид карты
         self.typ = 'map'
         # Центр карты
         self.cords = [60.583335, 56.964456]
         # Значения скорости перемещения карты в зависимости от зума
-        self.values_speed = {2: 10, 3: 5, 4: 2, 5: 1, 6: 0.8, 7: 0.6, 8: 0.3, 9: 0.1, 10: 0.08,
-                             11: 0.04, 12: 0.02, 13: 0.01, 14: 0.005, 15: 0.003, 16: 0.0015, 17: 0.0006,
-                             18: 0.0003, 19: 0.0002, 20: 0.00015, 21: 0.0001}
-        # Скорость перемещения карты
-        self.move_speed = self.values_speed[self.zoom]
         self.map_view.addItems(['map', 'sat', 'skl'])
         self.map_view.currentTextChanged.connect(self.view_changed)
         self.connect_buttons()
@@ -49,10 +45,12 @@ class MainWindow(QMainWindow):
         self.update_map()
 
     @staticmethod
-    def check_zoom(zoom: int):
+    def check_zoom(spn: list):
         """Проверяет корректность значения zoom"""
         # если поставить меньше, то у карты масштаб поменяется
-        if zoom > 21 or zoom < 2:
+        if spn[0][0] > 180 or spn[1][0] < -180 or spn[0][1] > 90 or spn[1][1] < -90:
+            return False
+        elif spn[0][0] >= spn[1][0] or spn[0][1] >= spn[1][1]:
             return False
         return True
 
@@ -63,6 +61,17 @@ class MainWindow(QMainWindow):
             return False
         return True
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            x, y = event.pos().x(), event.pos().y()
+            if x <= self.size_image[0] and y <= self.size_image[1]:
+                cord_x = x / self.size_image[0]
+                cord_y = (self.size_image[1] - y) / self.size_image[1]
+                # Координаты нажатия
+                point_x = self.bbox[0][0] + (cord_x * abs(self.bbox[0][0] - self.bbox[1][0]))
+                point_y = self.bbox[0][1] + (cord_y * abs(self.bbox[0][1] - self.bbox[1][1]))
+                self.find_toponym(f'{point_x}, {point_y}', update_cord=False)
+
     def connect_buttons(self):
         # тут кнопочки соединяем
         # Пайчарм на отсутствие коннекта ругается, но он лох слепой просто
@@ -72,17 +81,18 @@ class MainWindow(QMainWindow):
         zoom_out = QShortcut(QKeySequence(Qt.Key.Key_PageDown), self)
         zoom_out.activated.connect(self.zoomin_map)
 
+        move_speed = abs(self.bbox[1][0] - self.bbox[0][0])
         move_left = QShortcut(QKeySequence(Qt.Key.Key_Left), self)
-        move_left.activated.connect(lambda: self.move([self.cords[0] - self.move_speed, self.cords[1]]))
+        move_left.activated.connect(lambda: self.move([-move_speed, 0]))
 
         move_right = QShortcut(QKeySequence(Qt.Key.Key_Right), self)
-        move_right.activated.connect(lambda: self.move([self.cords[0] + self.move_speed, self.cords[1]]))
+        move_right.activated.connect(lambda: self.move([move_speed, 0]))
 
         move_up = QShortcut(QKeySequence(Qt.Key.Key_Up), self)
-        move_up.activated.connect(lambda: self.move([self.cords[0], self.cords[1] + self.move_speed]))
+        move_up.activated.connect(lambda: self.move([0, move_speed]))
 
         move_down = QShortcut(QKeySequence(Qt.Key.Key_Down), self)
-        move_down.activated.connect(lambda: self.move([self.cords[0], self.cords[1] - self.move_speed]))
+        move_down.activated.connect(lambda: self.move([0, -move_speed]))
 
         self.find_toponym_button.clicked.connect(self.find_toponym)
         self.reset_search.clicked.connect(self.delete_search)
@@ -111,7 +121,7 @@ class MainWindow(QMainWindow):
         self.address_toponym.clear()
         self.update_map()
 
-    def find_toponym(self):
+    def find_toponym(self, find_text=None, update_cord=True):
         """Находит топоним по запросу"""
         geocode_api_server = 'https://geocode-maps.yandex.ru/1.x/'
         geocode_params = {
@@ -120,6 +130,8 @@ class MainWindow(QMainWindow):
             'lang': 'ru_RU',
             'format': 'json'
         }
+        if find_text is not None:
+            geocode_params['geocode'] = find_text
 
         response = requests.get(geocode_api_server, params=geocode_params)
         if not response:
@@ -135,11 +147,16 @@ class MainWindow(QMainWindow):
                 return
             self.toponym = toponym
             toponym_cord = toponym["Point"]["pos"].split()
+            if update_cord:
+                envelope_lower = list(map(float, toponym['boundedBy']['Envelope']['lowerCorner'].split()))
+                envelope_upper = list(map(float, toponym['boundedBy']['Envelope']['upperCorner'].split()))
+                self.bbox = [envelope_lower, envelope_upper]
+                self.cords = list(map(float, toponym_cord))
+
             self.update_address_toponym()
             # Добавление метки в географическом месте, заданной в запросе
             pt = "{0},{1},{2}{3}{4}".format(toponym_cord[0], toponym_cord[1], 'pm2', 'gn', 'l')
             self.mark = pt
-            self.cords = list(map(float, toponym_cord))
             self.update_map()
 
     def update_address_toponym(self):
@@ -156,42 +173,52 @@ class MainWindow(QMainWindow):
 
     def update_map(self):
         """Обновление карты"""
-        image = self.load_map(self.cords, self.zoom, self.typ, self.mark)
+        bbox = f'{self.bbox[0][0]},{self.bbox[0][1]}~{self.bbox[1][0]},{self.bbox[1][1]}'
+        image = self.load_map(self.cords, bbox, self.typ, self.mark, self.size_image)
         if image is not None:
             self.map.loadFromData(image)
-        # не смотрим, что PyCharm ругается, ибо пайчарм - тот ещё дурачок, мы эту кнопку в uic.loadui в __init__ делали
         self.map_label.setPixmap(self.map)
 
     def zoomin_map(self):
         """Уменьшение zoom"""
-        if self.check_zoom(self.zoom - 1):
-            self.zoom -= 1
-            self.move_speed = self.values_speed[self.zoom]
+        delta = abs(self.bbox[1][0] - self.bbox[0][0]) / 10
+        new_bbox = [[self.bbox[0][0] + delta, self.bbox[0][1] + delta], [self.bbox[1][0] - delta, self.bbox[1][1] - delta]]
+
+        if self.check_zoom(new_bbox):
+            self.bbox = new_bbox
         self.update_map()
 
     def zoomout_map(self):
         """Увеличение zoom"""
-        if self.check_zoom(self.zoom + 1):
-            self.zoom += 1
-            self.move_speed = self.values_speed[self.zoom]
+        delta = abs(self.bbox[1][0] - self.bbox[0][0]) / 10
+        new_bbox = [[self.bbox[0][0] - delta, self.bbox[0][1] - delta], [self.bbox[1][0] + delta, self.bbox[1][1] + delta]]
+
+        if self.check_zoom(new_bbox):
+            self.bbox = new_bbox
         self.update_map()
 
     def move(self, cords):
         """Перемещение центра карты"""
-        if self.check_cords(cords):
-            self.cords = cords
+        if self.check_cords([self.cords[0] + cords[0], self.cords[1] + cords[1]]):
+            self.cords = [self.cords[0] + cords[0], self.cords[1] + cords[1]]
+            self.bbox[0][1] += cords[1]
+            self.bbox[1][1] += cords[1]
+            self.bbox[0][0] += cords[0]
+            self.bbox[1][0] += cords[0]
             self.update_map()
 
     @staticmethod
-    def load_map(cords: list[float | int, float | int], zoom: int, typ: str, pt: str):
+    def load_map(cords: list[float | int, float | int], spn: str, typ: str, pt: str, size: tuple):
         """Загрузка изображения карты"""
         server_url = 'https://static-maps.yandex.ru/1.x/'
         parameters = {'ll': ','.join(map(str, cords)),
-                      'z': zoom,
+                      'size': ','.join(map(str, size)),
+                      'bbox': spn,
                       'l': typ}
         if pt != '':
             parameters['pt'] = pt
         response = requests.get(server_url, params=parameters)
+
         if not response:
             print('Чёт пошло не так')
             print(f'ответ от сервера: {response}, код ответа: {response.status_code}')
