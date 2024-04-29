@@ -4,6 +4,7 @@ from PyQt6.QtCore import Qt
 from PyQt6 import uic
 import requests
 import json
+import copy
 
 # Bober kurwa
 # Чтобы запустить QtDesigner напишите в консоли "PyQt6-tools designer"
@@ -22,15 +23,18 @@ class MainWindow(QMainWindow):
         self.add_mail = False
         # Последний географический объект, который был найден
         self.toponym = None
-        self.bbox = [[60.579364, 56.962154], [60.587575, 56.966639]]
+        # Область показа
+        self.bbox = None
         # Вид карты
         self.typ = 'map'
-        # Центр карты
-        self.cords = [60.583335, 56.964456]
-        # Значения скорости перемещения карты в зависимости от зума
+        self.run()
+
+    def run(self):
         self.map_view.addItems(['map', 'sat', 'skl'])
         self.map_view.currentTextChanged.connect(self.view_changed)
         self.connect_buttons()
+        self.name_toponym.setText('Верхняя Пышма, Успенский проспект, 2Г')
+        self.find_toponym()
         self.update_map()
 
     @staticmethod
@@ -45,12 +49,13 @@ class MainWindow(QMainWindow):
         self.update_map()
 
     @staticmethod
-    def check_zoom(spn: list):
+    def check_zoom(bbox: list):
         """Проверяет корректность значения zoom"""
-        # если поставить меньше, то у карты масштаб поменяется
-        if spn[0][0] > 180 or spn[1][0] < -180 or spn[0][1] > 90 or spn[1][1] < -90:
+        if bbox[0][0] > 180 or bbox[0][0] < -170 or bbox[1][0] > 180 or bbox[1][0] < -170:
             return False
-        elif spn[0][0] >= spn[1][0] or spn[0][1] >= spn[1][1]:
+        elif bbox[0][1] > 85 or bbox[0][1] < -85 or bbox[1][1] > 85 or bbox[1][1] < -85:
+            return False
+        elif bbox[0][0] >= bbox[1][0] or bbox[0][1] >= bbox[1][1]:
             return False
         return True
 
@@ -65,12 +70,18 @@ class MainWindow(QMainWindow):
         if event.button() == Qt.MouseButton.LeftButton:
             x, y = event.pos().x(), event.pos().y()
             if x <= self.size_image[0] and y <= self.size_image[1]:
-                cord_x = x / self.size_image[0]
-                cord_y = (self.size_image[1] - y) / self.size_image[1]
-                # Координаты нажатия
-                point_x = self.bbox[0][0] + (cord_x * abs(self.bbox[0][0] - self.bbox[1][0]))
-                point_y = self.bbox[0][1] + (cord_y * abs(self.bbox[0][1] - self.bbox[1][1]))
-                self.find_toponym(f'{point_x}, {point_y}', update_cord=False)
+                cord_long, cord_width = get_cords(x, y, self.size_image, self.bbox)
+                self.find_toponym(f'{cord_long},{cord_width}', update_bbox=False)
+
+        elif event.button() == Qt.MouseButton.RightButton:
+            x, y = event.pos().x(), event.pos().y()
+            if x <= self.size_image[0] and y <= self.size_image[1]:
+                cord_long, cord_width = get_cords(x, y, self.size_image, self.bbox)
+                organization = get_organization((cord_long, cord_width))
+                if organization is None:
+                    self.organization_label.setText('Не найдена')
+                else:
+                    self.organization_label.setText(organization)
 
     def connect_buttons(self):
         # тут кнопочки соединяем
@@ -81,18 +92,17 @@ class MainWindow(QMainWindow):
         zoom_out = QShortcut(QKeySequence(Qt.Key.Key_PageDown), self)
         zoom_out.activated.connect(self.zoomin_map)
 
-        move_speed = abs(self.bbox[1][0] - self.bbox[0][0])
         move_left = QShortcut(QKeySequence(Qt.Key.Key_Left), self)
-        move_left.activated.connect(lambda: self.move([-move_speed, 0]))
+        move_left.activated.connect(lambda: self.move([-1, 0]))
 
         move_right = QShortcut(QKeySequence(Qt.Key.Key_Right), self)
-        move_right.activated.connect(lambda: self.move([move_speed, 0]))
+        move_right.activated.connect(lambda: self.move([1, 0]))
 
         move_up = QShortcut(QKeySequence(Qt.Key.Key_Up), self)
-        move_up.activated.connect(lambda: self.move([0, move_speed]))
+        move_up.activated.connect(lambda: self.move([0, 1]))
 
         move_down = QShortcut(QKeySequence(Qt.Key.Key_Down), self)
-        move_down.activated.connect(lambda: self.move([0, -move_speed]))
+        move_down.activated.connect(lambda: self.move([0, -1]))
 
         self.find_toponym_button.clicked.connect(self.find_toponym)
         self.reset_search.clicked.connect(self.delete_search)
@@ -121,7 +131,7 @@ class MainWindow(QMainWindow):
         self.address_toponym.clear()
         self.update_map()
 
-    def find_toponym(self, find_text=None, update_cord=True):
+    def find_toponym(self, click_cord=None, update_bbox=True):
         """Находит топоним по запросу"""
         geocode_api_server = 'https://geocode-maps.yandex.ru/1.x/'
         geocode_params = {
@@ -130,8 +140,8 @@ class MainWindow(QMainWindow):
             'lang': 'ru_RU',
             'format': 'json'
         }
-        if find_text is not None:
-            geocode_params['geocode'] = find_text
+        if click_cord not in (False, None):
+            geocode_params['geocode'] = click_cord
 
         response = requests.get(geocode_api_server, params=geocode_params)
         if not response:
@@ -139,6 +149,7 @@ class MainWindow(QMainWindow):
         else:
             self.error_message.clear()
             json_response = response.json()
+
             try:
                 toponym = json_response["response"]["GeoObjectCollection"][
                     "featureMember"][0]["GeoObject"]
@@ -147,15 +158,20 @@ class MainWindow(QMainWindow):
                 return
             self.toponym = toponym
             toponym_cord = toponym["Point"]["pos"].split()
-            if update_cord:
+            print(toponym_cord)
+            if update_bbox:
                 envelope_lower = list(map(float, toponym['boundedBy']['Envelope']['lowerCorner'].split()))
                 envelope_upper = list(map(float, toponym['boundedBy']['Envelope']['upperCorner'].split()))
                 self.bbox = [envelope_lower, envelope_upper]
-                self.cords = list(map(float, toponym_cord))
+
+            if click_cord not in (None, False):
+                # Добавление метки в географическом месте, где нажали мышкой
+                pt = "{0},{1},{2}{3}{4}".format(click_cord.split(',')[0], click_cord.split(',')[1], 'pm2', 'gn', 'l')
+            else:
+                # Добавление метки в географическом месте, заданной в запросе
+                pt = "{0},{1},{2}{3}{4}".format(toponym_cord[0], toponym_cord[1], 'pm2', 'gn', 'l')
 
             self.update_address_toponym()
-            # Добавление метки в географическом месте, заданной в запросе
-            pt = "{0},{1},{2}{3}{4}".format(toponym_cord[0], toponym_cord[1], 'pm2', 'gn', 'l')
             self.mark = pt
             self.update_map()
 
@@ -174,45 +190,49 @@ class MainWindow(QMainWindow):
     def update_map(self):
         """Обновление карты"""
         bbox = f'{self.bbox[0][0]},{self.bbox[0][1]}~{self.bbox[1][0]},{self.bbox[1][1]}'
-        image = self.load_map(self.cords, bbox, self.typ, self.mark, self.size_image)
+        image = self.load_map(bbox, self.typ, self.mark, self.size_image)
         if image is not None:
             self.map.loadFromData(image)
         self.map_label.setPixmap(self.map)
 
-    def zoomin_map(self):
+    def zoomout_map(self):
         """Уменьшение zoom"""
-        delta = abs(self.bbox[1][0] - self.bbox[0][0]) / 10
+        delta = abs(self.bbox[1][0] - self.bbox[0][0]) / 3
         new_bbox = [[self.bbox[0][0] + delta, self.bbox[0][1] + delta], [self.bbox[1][0] - delta, self.bbox[1][1] - delta]]
 
         if self.check_zoom(new_bbox):
             self.bbox = new_bbox
-        self.update_map()
+            self.update_map()
 
-    def zoomout_map(self):
+    def zoomin_map(self):
         """Увеличение zoom"""
-        delta = abs(self.bbox[1][0] - self.bbox[0][0]) / 10
+        delta = abs(self.bbox[1][0] - self.bbox[0][0]) / 3
         new_bbox = [[self.bbox[0][0] - delta, self.bbox[0][1] - delta], [self.bbox[1][0] + delta, self.bbox[1][1] + delta]]
 
         if self.check_zoom(new_bbox):
             self.bbox = new_bbox
-        self.update_map()
+            self.update_map()
 
-    def move(self, cords):
+    def move(self, action):
         """Перемещение центра карты"""
-        if self.check_cords([self.cords[0] + cords[0], self.cords[1] + cords[1]]):
-            self.cords = [self.cords[0] + cords[0], self.cords[1] + cords[1]]
-            self.bbox[0][1] += cords[1]
-            self.bbox[1][1] += cords[1]
-            self.bbox[0][0] += cords[0]
-            self.bbox[1][0] += cords[0]
+        move_speed = abs(self.bbox[1][0] - self.bbox[0][0]) / 10
+        new_bbox = copy.deepcopy(self.bbox)
+        if action[0] == 0:
+            new_bbox[0][1] += action[1] * move_speed
+            new_bbox[1][1] += action[1] * move_speed
+        else:
+            new_bbox[0][0] += action[0] * move_speed
+            new_bbox[1][0] += action[0] * move_speed
+
+        if self.check_zoom(new_bbox):
+            self.bbox = new_bbox
             self.update_map()
 
     @staticmethod
-    def load_map(cords: list[float | int, float | int], spn: str, typ: str, pt: str, size: tuple):
+    def load_map(spn: str, typ: str, pt: str, size: tuple):
         """Загрузка изображения карты"""
         server_url = 'https://static-maps.yandex.ru/1.x/'
-        parameters = {'ll': ','.join(map(str, cords)),
-                      'size': ','.join(map(str, size)),
+        parameters = {'size': ','.join(map(str, size)),
                       'bbox': spn,
                       'l': typ}
         if pt != '':
@@ -224,3 +244,31 @@ class MainWindow(QMainWindow):
             print(f'ответ от сервера: {response}, код ответа: {response.status_code}')
             return None
         return response.content
+
+
+def get_organization(pos):
+    x, y = pos
+    search_api_server = 'https://search-maps.yandex.ru/v1/'
+    params = {
+        'apikey': '18efb559-e464-4f3f-84e9-99dcee4359bf',
+        'text': str(x) + ', ' + str(y),
+        'lang': 'ru_RU',
+        'type': 'biz'
+    }
+    response = requests.get(search_api_server, params=params)
+    print(response.url)
+    json_response = response.json()
+    if json_response['features']:
+        name_org = json_response['features'][0]['properties']['CompanyMetaData']['name']
+        return name_org
+    else:
+        return None
+
+
+def get_cords(x, y, size_image, bbox):
+    part_x = x / size_image[0]
+    part_y = (size_image[1] - y) / size_image[1]
+    # Координаты нажатия
+    cord_long = bbox[0][0] + (part_x * abs(bbox[1][0] - bbox[0][0]))
+    cord_width = bbox[0][1] + (part_y * abs(bbox[1][1] - bbox[0][1]))
+    return cord_long, cord_width
